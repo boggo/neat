@@ -43,3 +43,6 @@ type Genome struct {
     ConnGenes ConnGeneSlice // Connection definitions
     Fitness   []float64     // Fitness of this Genome
 }
+
+// A slice of Genomes
+type GenomeSlice []*Genome
