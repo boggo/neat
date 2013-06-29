@@ -45,7 +45,7 @@ func (decoder Decoder) Decode(genome *Genome) (phenome Phenome, err error) {
     }
 
     // Return the new phenome
-    phenome = network
+    phenome = &networkPhenome(network)
     return
 
 }
