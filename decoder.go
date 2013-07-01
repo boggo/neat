@@ -3,40 +3,51 @@ package neat
 import (
     "github.com/boggo/neural"
     "sort"
+	"fmt"
 )
 
 // Interface describing method to decode a genome into a phenome
-type GenomeDecoder interface {
-    Decode(genome *Genome) (phenome *Phenome, err error)
+type Decoder interface {
+    Decode(genome *Genome) (phenome Phenome, err error)
 }
 
 // Default NEAT decoder
-type Decoder struct{}
+type networkDecoder struct{}
+
+// Returns a new NEAT decoder
+func NewDecoder() (decoder Decoder) {
+	return &networkDecoder{}
+}
 
 // Decodes a NEAT genome into a phenome
-func (decoder Decoder) Decode(genome *Genome) (phenome Phenome, err error) {
+func (decoder networkDecoder) Decode(genome *Genome) (phenome Phenome, err error) {
+	fmt.Println("Decoding Genome", genome)
+	
+	// Clone the Genome so we do not change the existing Gene sort order (by Marker)
+	clone := cloneGenome(genome, 0)
 
     // Sort the genes to ensure the network is built in the correct order
-    n := sortNodes{genome}
+    n := sortNodes{clone}
     sort.Sort(n)
 
-    c := sortConns{genome}
+    c := sortConns{clone}
     sort.Sort(c)
 
     // Construct the Network.
     network := &neural.Network{}
 
     // Add the Nodes
-    m := make(map[uint32]neural.Node, len(genome.NodeGenes)) // Map of node to gene's marker
-    for _, x := range genome.NodeGenes {
+    m := make(map[uint32]neural.Node, len(clone.NodeGenes)) // Map of node to gene's marker
+    for _, x := range clone.NodeGenes {
         node := neural.NewNode(x.FuncType, x.NodeType)
         m[x.Marker] = node
+		fmt.Println("Got here", x, node)
         network.AddNode(node)
     }
 
     // Add the Connections. Make sure the connections are sorted so they fire
     // in the correct order
-    conns := genome.ConnGenes
+    conns := clone.ConnGenes
     for _, x := range conns {
         if x.Enabled {
             conn := neural.NewConnection(m[x.Source], m[x.Target], x.Weight)
@@ -45,7 +56,8 @@ func (decoder Decoder) Decode(genome *Genome) (phenome Phenome, err error) {
     }
 
     // Return the new phenome
-    phenome = &networkPhenome(network)
+    phenome = &networkPhenome{network}
+	fmt.Println("Decoding Genome ... done")
     return
 
 }

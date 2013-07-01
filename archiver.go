@@ -4,6 +4,7 @@ package neat
 import (
     "encoding/xml"
     "errors"
+	"fmt"
 	"io/ioutil"
     "os"
     "path"
@@ -17,6 +18,8 @@ type Archiver interface {
 }
 
 func NewArchiver(path, prefix string) (archiver Archiver, err error) {
+	fmt.Println("New Archive")
+	
 
     // Verify the path exists and is a directory
     var info os.FileInfo
@@ -43,6 +46,8 @@ type xmlArchiver struct {
 
 // Archives the experiment to an XML file
 func (archiver xmlArchiver) Archive(experiment *Experiment) (err error) {
+	fmt.Println("Archiver Archive")
+	
 
     // Create a new encoder
     var file *os.File
@@ -66,6 +71,8 @@ func (archiver xmlArchiver) Archive(experiment *Experiment) (err error) {
 
 // Restores the latest version of an experiment from the archive
 func (archiver xmlArchiver) Restore() (experiment *Experiment, err error) {
+	fmt.Println("Archiver Restore")
+	
 
     // Load the most recent generation from the archive path. ReadDir returns
     // the files sorted by name.
@@ -83,7 +90,7 @@ func (archiver xmlArchiver) Restore() (experiment *Experiment, err error) {
     current := files[len(files)-1] // This should be the latest file
 
     // Load the experiement
-    r, err := os.Open(current.Name())
+    r, err := os.Open(path.Join(archiver.path, current.Name()))
     if err != nil {
         return
     }

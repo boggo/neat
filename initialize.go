@@ -8,12 +8,15 @@ structs and environment
 */
 
 import (
+    "fmt"
+    "github.com/boggo/neural"
     "github.com/boggo/sequence"
 )
 
 // Creates the first Population, creating the prototypical Genome and
 // then cloning it to fill up the first Species with PopulationSize copies.
 func initPop(settings *Settings) (pop *Population, err error) {
+    fmt.Println("Initial Population")
 
     // Create the initial Species
     spec, err := initSpec(settings)
@@ -28,15 +31,15 @@ func initPop(settings *Settings) (pop *Population, err error) {
         orgs:    make([]*Organism, popSize)}
 
     // Create the prototype genome
-    gen := initGen(settings)
-    settings.ProtoGenome = gen // Record the Genome for future use
+    gen, err := initGen(settings)
+    settings.ProtoGenome = *gen // Record the Genome for future use
 
     // Add genomes to the species and the phenomes to the population
     r := newRandom()
     for i := 0; i < popSize; i++ {
 
         // Create a new genome
-        g := gen.Clone(settings.ids.Next())
+        g := cloneGenome(gen, settings.ids.Next())
 
         // Randomize the weights
         for w, _ := range g.ConnGenes {
@@ -54,12 +57,16 @@ func initPop(settings *Settings) (pop *Population, err error) {
 // Creates the first Species to hold the entire first PopulationSize of
 // Genomes
 func initSpec(settings *Settings) (spec *Species, err error) {
-    return &Species{Genomes: make([]*Genome, settings.PopulationSize)}
+    fmt.Println("Initial Species")
+
+    spec = &Species{Genomes: make([]*Genome, settings.PopulationSize)}
+    return
 }
 
 // Creates the initial Genome by fully connecting the bias and input nodes
 // to the output node(s)
 func initGen(settings *Settings) (gen *Genome, err error) {
+    fmt.Println("Initial Genome")
 
     // Shortcuts to settings values
     biasCount := settings.BiasCount
@@ -83,14 +90,14 @@ func initGen(settings *Settings) (gen *Genome, err error) {
     }
     for i := 0; i < biasCount; i++ {
         pos := [3]float32{0, step * float32(i), 0}
-        gen.NodeGenes[i] = NodeGene{Gene: Gene{Marker: marker.Next()},
+        gen.NodeGenes[i] = NodeGene{Gene: Gene{Marker: settings.marker.Next()},
             NodeType: neural.BIAS, FuncType: neural.DIRECT, Position: pos}
     }
 
     // Create the input nodes
     for i := 0; i < inputCount; i++ {
         pos := [3]float32{0, float32(i+inputOffset) * step, 0}
-        gen.NodeGenes[i+inputOffset] = NodeGene{Gene: Gene{Marker: marker.Next()},
+        gen.NodeGenes[i+inputOffset] = NodeGene{Gene: Gene{Marker: settings.marker.Next()},
             NodeType: neural.INPUT, FuncType: neural.DIRECT, Position: pos}
     }
 
@@ -101,16 +108,16 @@ func initGen(settings *Settings) (gen *Genome, err error) {
     }
     for i := 0; i < outputCount; i++ {
         pos := [3]float32{1, float32(i) * step, 0}
-        gen.NodeGenes[i+outputOffset] = NodeGene{Gene: Gene{Marker: marker.Next()},
+        gen.NodeGenes[i+outputOffset] = NodeGene{Gene: Gene{Marker: settings.marker.Next()},
             NodeType: neural.OUTPUT, FuncType: neural.STEEPENED_SIGMOID, Position: pos}
     }
 
     // Create the connections
     for i := 0; i < biasCount+inputCount; i++ {
         for o := 0; o < outputCount; o++ {
-            gen.ConnGenes[i+o] = ConnGene{Gene: Gene{Marker: marker.Next()},
-                Enabled: true, Weight: 0, Source: genome.NodeGenes[i].Marker,
-                Target: genome.NodeGenes[o+outputOffset].Marker}
+            gen.ConnGenes[i+o] = ConnGene{Gene: Gene{Marker: settings.marker.Next()},
+                Enabled: true, Weight: 0, Source: gen.NodeGenes[i].Marker,
+                Target: gen.NodeGenes[o+outputOffset].Marker}
         }
     }
 
@@ -120,7 +127,8 @@ func initGen(settings *Settings) (gen *Genome, err error) {
 
 // Itialize the sequences based on the last known values. This is run after
 // restoring an experiment from an archive
-func (exp *Experiment) initSeq() {
+func initSeq(exp *Experiment) {
+    fmt.Println("Initial Sequences")
 
     // Iterate the species in the current generation
     i := uint32(0)
@@ -137,7 +145,7 @@ func (exp *Experiment) initSeq() {
                 }
 
                 // Identify the last marker
-                mm := maxMarker(g)
+                mm := g.maxMarker()
                 if mm > m {
                     m = mm
                 }
@@ -154,4 +162,10 @@ func (exp *Experiment) initSeq() {
     exp.Settings.ids = sequence.NewUInt32(i, 1)
     exp.Settings.marker = sequence.NewUInt32(m, 1)
 
+}
+
+func cloneGenome(orig *Genome, id uint32) (clone *Genome) {
+    clone = &(*orig) // take a copy of the original
+    clone.ID = id    // set the new ID
+    return
 }

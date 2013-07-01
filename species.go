@@ -1,6 +1,5 @@
 package neat
 
-
 // Species is a contatiner of Genomes who share a similar genetic composition.
 type Species struct {
     Genomes    GenomeSlice // Collection of Genomes
@@ -24,9 +23,3 @@ func (s SpeciesSlice) Less(i, j int) bool {
 
 // Swap swaps the elements with indexes i and j.
 func (s SpeciesSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-// Create the next generation's species
-func rollSpecies(settings Settings, curr *Species) (next *Species) {
-
-	return
-}
