@@ -281,6 +281,7 @@ func addGenomeToPop(gen *Genome, pop *Population, settings *Settings) {
         d := distance(gen, &x.example, settings)
         if d < settings.CompatThreshold {
             parent = pop.Species[i]
+            break
         }
 
     }
