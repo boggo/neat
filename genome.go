@@ -1,103 +1,184 @@
+/*  Copyright (c) 2013, Brian Hummer (brian@boggo.net)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the boggo.net nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL BRIAN HUMMER BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 package neat
 
 import (
-    "github.com/boggo/neural"
-    "sort"
+	"fmt"
+	"github.com/boggo/neural"
 )
 
-// Genes are individual elements within the Genome. Each are tagged with a
-// historical Marker indicating when they became part of the Genome.
-type Gene struct {
-    Marker uint32
+var (
+	marker int
+	id     int
+)
+
+// TODO: Make concurrent safe
+func nextMarker() int {
+	marker += 1
+	return marker
 }
 
-// Node Genes encode the information necessary for constucting Neural Network
-// nodes (neurons).
+// TODO: Make concurrent safe
+func nextID() int {
+	id += 1
+	return id
+}
+
+// Encoding for the node in the neural network
 type NodeGene struct {
-    Gene                     // Common gene components like historical marker
-    NodeType neural.NodeType // Type of node
-    FuncType neural.FuncType // Activation function
-    Position [3]float32      // 3D position of node in network. In Y,X,Z order for easy sorting for Decoding
+	Marker int             // Innovation marker for this gene
+	Type   neural.NodeType // Network node type
+	X, Y   float64         // 2-D Position of this node within the network
 }
 
-// A slice of Node Genes.
-type NodeGeneSlice []NodeGene
+func (ng NodeGene) String() string {
+	var t string
+	switch ng.Type {
+	case neural.BIAS:
+		t = "BIAS"
+	case neural.INPUT:
+		t = "INPUT"
+	case neural.OUTPUT:
+		t = "OUTPUT"
+	case neural.HIDDEN:
+		t = "HIDDEN"
+	default:
+		t = "UNKNOWN"
+	}
+	return fmt.Sprintf("NodeGene [%4d] %7v at %3.2f, %3.2f", ng.Marker, t, ng.X, ng.Y)
+}
 
-// Len is the number of elements in the collection.
-func (s NodeGeneSlice) Len() int { return len(s) }
+func cloneNode(source *NodeGene) (clone *NodeGene) {
+	clone = &NodeGene{Marker: source.Marker, Type: source.Type, X: source.X, Y: source.Y}
+	return
+}
 
-// Less returns whether the element with index i should sort
-// before the element with index j.
-func (s NodeGeneSlice) Less(i, j int) bool { return s[i].Marker < s[j].Marker }
-
-// Swap swaps the elements with indexes i and j.
-func (s NodeGeneSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-// Connection Genes encode the information for constructing Neural Network
-// connections (synapses)
+// Encoding for the connection in the neural network
 type ConnGene struct {
-    Gene            // Common gene components like historical marker
-    Enabled bool    // Is this connection enabled
-    Weight  float64 // The weight applied during activcation
-    Source  uint32  // Historical Marker of the source node
-    Target  uint32  // Historical Marker of the target node
+	Marker         int     // Innovation marker for this gene
+	Source, Target int     // Innovation markers for the source and target node genes
+	Weight         float64 // Weight applied during activation
+	Enabled        bool    // Is this connection gene enabled?
 }
 
-// A slice of Connection Genes.
-type ConnGeneSlice []ConnGene
+func (cg ConnGene) String() string {
+	var e string
+	if cg.Enabled {
+		e = "ENABLED"
+	} else {
+		e = "DISABLED"
+	}
+	return fmt.Sprintf("ConnGene [%4d] Src: %4d Tgt: %4d Wgt: %+8.6f %v", cg.Marker, cg.Source,
+		cg.Target, cg.Weight, e)
+}
 
-// Len is the number of elements in the collection.
-func (s ConnGeneSlice) Len() int { return len(s) }
+func cloneConn(source *ConnGene) (clone *ConnGene) {
+	clone = &ConnGene{Marker: source.Marker, Source: source.Source, Target: source.Target,
+		Weight: source.Weight, Enabled: source.Enabled}
+	return
+}
 
-// Less returns whether the element with index i should sort
-// before the element with index j.
-func (s ConnGeneSlice) Less(i, j int) bool { return s[i].Marker < s[j].Marker }
-
-// Swap swaps the elements with indexes i and j.
-func (s ConnGeneSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-// Genome encodes the information necessary to construct a Network for
-// use in an Experiment
+// Encoded organism
 type Genome struct {
-    ID        uint32        // Uniquely identifies this Genome
-    NodeGenes NodeGeneSlice // Node definitions
-    ConnGenes ConnGeneSlice // Connection definitions
-    Fitness   []float64     // Fitness of this Genome
+	ID      int               // Public identifier for this genome
+	Nodes   map[int]*NodeGene // Collection of node genes identified by their markers
+	Conns   map[int]*ConnGene // Collection of conn genes identified by their markers
+	Fitness float64           // Fitness of this Genome
 }
 
-// A slice of Genomes
-type GenomeSlice []*Genome
-
-// Len is the number of elements in the collection.
-func (g GenomeSlice) Len() int { return len(g) }
-
-// Less returns whether the element with index i should sort
-// before the element with index j.
-func (g GenomeSlice) Less(i, j int) bool {
-    // Order Genome by their relative fitness
-    return g[i].Fitness[0] < g[j].Fitness[0]
+func (g Genome) String() string {
+	return fmt.Sprintf("Genome [%4d] has %3d Nodes and %3d Conns, Fitness: %8.4f", g.ID,
+		len(g.Nodes), len(g.Conns), g.Fitness)
 }
 
-// Swap swaps the elements with indexes i and j.
-func (g GenomeSlice) Swap(i, j int) { g[i], g[j] = g[j], g[i] }
-
-// Determine the maximum Marker within a genome
-func (g *Genome) maxMarker() uint32 {
-    n := g.NodeGenes[len(g.NodeGenes)-1].Marker
-    c := g.ConnGenes[len(g.ConnGenes)-1].Marker
-    if n > c {
-        return n
-    } else {
-        return c
-    }
+func cloneGenome(source *Genome, id int) (clone *Genome) {
+	clone = &Genome{ID: id, Fitness: source.Fitness,
+		Nodes: make(map[int]*NodeGene), Conns: make(map[int]*ConnGene)}
+	for k, v := range source.Nodes {
+		clone.Nodes[k] = cloneNode(v)
+	}
+	for k, v := range source.Conns {
+		clone.Conns[k] = cloneConn(v)
+	}
+	return clone
 }
 
-func (gen *Genome) addNodeGene(node NodeGene) {
-    gen.NodeGenes = append(gen.NodeGenes, node)
-    sort.Sort(gen.NodeGenes)
-}
+// Creates the initial genome to seed the population
+func initialGenome() (genome *Genome, err error) {
 
-func (gen *Genome) addConnGene(conn ConnGene) {
-    gen.ConnGenes = append(gen.ConnGenes, conn)
-    sort.Sort(gen.ConnGenes)
+	// Shortcuts to settings values
+	biasCount := settings.BiasCount
+	inputCount := settings.InputCount
+	outputCount := settings.OutputCount
+
+	// Create the new genome with a negative (i.e., invalid) ID
+	genome = &Genome{ID: -1, Nodes: make(map[int]*NodeGene), Conns: make(map[int]*ConnGene)}
+
+	// Construct the nodes
+	// Create the bias and input nodes
+	var step float64
+	var ng *NodeGene
+	step = 0
+	if biasCount+inputCount > 1 {
+		step = 1.0 / float64(biasCount+inputCount-1)
+	}
+	for i := 0; i < biasCount; i++ {
+		ng = &NodeGene{Marker: nextMarker(), Type: neural.BIAS, X: step * float64(i), Y: 0}
+		genome.Nodes[ng.Marker] = ng
+	}
+
+	// Create the input nodes
+	for i := 0; i < inputCount; i++ {
+		ng = &NodeGene{Marker: nextMarker(), Type: neural.INPUT, X: step * float64(i+biasCount), Y: 0}
+		genome.Nodes[ng.Marker] = ng
+	}
+
+	// Create the output nodes
+	step = 0
+	if outputCount > 1 {
+		step = 1.0 / float64(outputCount-1)
+	}
+	for i := 0; i < outputCount; i++ {
+		ng = &NodeGene{Marker: nextMarker(), Type: neural.OUTPUT, X: step * float64(i), Y: 1.0}
+		genome.Nodes[ng.Marker] = ng
+	}
+
+	// Create the connections
+	for _, in := range genome.Nodes {
+		for _, out := range genome.Nodes {
+			if out.Type == neural.OUTPUT && (in.Type == neural.BIAS || in.Type == neural.INPUT) {
+				cg := &ConnGene{Marker: nextMarker(),
+					Enabled: true, Weight: 0, Source: in.Marker,
+					Target: out.Marker}
+				genome.Conns[cg.Marker] = cg
+			}
+		}
+	}
+
+	return
+
 }

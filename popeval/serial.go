@@ -24,44 +24,33 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package popeval
 
-var (
-	nodeInnos map[nodeKey]int
-	connInnos map[connKey]int
+import (
+	"github.com/boggo/neat"
 )
 
-func resetInnos() {
-	nodeInnos = make(map[nodeKey]int)
-	connInnos = make(map[connKey]int)
+func NewSerial() *serialPopEval {
+	return &serialPopEval{}
 }
 
-func blessNodeGene(ng *NodeGene) {
-	k := nodeKey{ng.X, ng.Y}
-	m, ok := nodeInnos[k]
-	if ok {
-		ng.Marker = m
-	} else {
-		ng.Marker = nextMarker()
-		nodeInnos[k] = ng.Marker
+type serialPopEval struct{}
+
+func (p serialPopEval) Evaluate(pop *neat.Population, orgEval neat.OrgEval) (err error) {
+
+	// Iterate the species within the population
+	for _, s := range pop.Species {
+
+		// Iterate the organisms within the species
+		for _, o := range s.Orgs {
+
+			// Evaluate the organism
+			err = orgEval.Evaluate(o)
+			if err != nil {
+				// do what exactly?
+			}
+		}
 	}
-}
 
-func blessConnGene(cg *ConnGene) {
-	k := connKey{cg.Source, cg.Target}
-	m, ok := connInnos[k]
-	if ok {
-		cg.Marker = m
-	} else {
-		cg.Marker = nextMarker()
-		connInnos[k] = cg.Marker
-	}
-}
-
-type nodeKey struct {
-	X, Y float64 // Position of the node in the network
-}
-
-type connKey struct {
-	Source, Target int // Markers of the source and target nodes
+	return
 }

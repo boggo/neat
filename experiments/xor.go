@@ -24,44 +24,51 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package main
 
-var (
-	nodeInnos map[nodeKey]int
-	connInnos map[connKey]int
+import (
+	"errors"
+	//"fmt"
+	"github.com/boggo/neat"
+	"github.com/boggo/neat/decoder"
+	"github.com/boggo/neat/popeval"
+	"math"
 )
 
-func resetInnos() {
-	nodeInnos = make(map[nodeKey]int)
-	connInnos = make(map[connKey]int)
-}
+type xorEval struct{}
 
-func blessNodeGene(ng *NodeGene) {
-	k := nodeKey{ng.X, ng.Y}
-	m, ok := nodeInnos[k]
-	if ok {
-		ng.Marker = m
-	} else {
-		ng.Marker = nextMarker()
-		nodeInnos[k] = ng.Marker
+func (eval xorEval) Evaluate(org *neat.Organism) (err error) {
+
+	if org.Phenome == nil {
+		err = errors.New("Cannot evaluate an org without a Phenome")
+		org.Fitness = 0 // Minimal fitness
+		return
 	}
-}
 
-func blessConnGene(cg *ConnGene) {
-	k := connKey{cg.Source, cg.Target}
-	m, ok := connInnos[k]
-	if ok {
-		cg.Marker = m
-	} else {
-		cg.Marker = nextMarker()
-		connInnos[k] = cg.Marker
+	in := [][]float64{{0, 0}, {0, 1}, {1, 0}, {1, 1}}
+	out := []float64{0, 1, 1, 0}
+
+	sum := float64(0)
+	for i := 0; i < len(in); i++ {
+		o, e2 := org.Analyze(in[i])
+		if e2 != nil {
+			err = e2
+			org.Fitness = 0
+			return
+		}
+		//fmt.Printf("Genome [%4d]: in %1.0f %1.0f out %1.0f guess was %7.6f err was %7.6f\n", org.ID, in[i][0], in[i][1], out[i], o[0], math.Pow(out[i]-o[0], 2))
+		sum += math.Pow(out[i]-o[0], 2)
 	}
+	org.Fitness = float64(1) - math.Sqrt(sum/float64(4))
+
+	return
 }
 
-type nodeKey struct {
-	X, Y float64 // Position of the node in the network
-}
+func main() {
 
-type connKey struct {
-	Source, Target int // Markers of the source and target nodes
+	neat.SetDecoder(decoder.NewNEAT())
+	neat.SetPopEval(popeval.NewSerial())
+	neat.SetOrgEval(xorEval{})
+	neat.Iterate(100)
+
 }

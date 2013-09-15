@@ -24,44 +24,34 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package phenome
 
-var (
-	nodeInnos map[nodeKey]int
-	connInnos map[connKey]int
+import (
+	"errors"
+	"github.com/boggo/neat"
+	"github.com/boggo/neural"
 )
 
-func resetInnos() {
-	nodeInnos = make(map[nodeKey]int)
-	connInnos = make(map[connKey]int)
+// Default implementation of Phenome uses a neural.Network to analyze the
+// inputs
+type networkPhenome struct {
+	network *neural.Network
 }
 
-func blessNodeGene(ng *NodeGene) {
-	k := nodeKey{ng.X, ng.Y}
-	m, ok := nodeInnos[k]
-	if ok {
-		ng.Marker = m
-	} else {
-		ng.Marker = nextMarker()
-		nodeInnos[k] = ng.Marker
+func NewNetwork(network *neural.Network) neat.Phenome {
+	return &networkPhenome{network}
+}
+
+// Analyzes the inputs and returns the results as a slice of float64. This
+// implementation is for the networkPhenome. Network does not return an error
+// in Activate() so the error value is nil upon return.
+func (p *networkPhenome) Analyze(inputs []float64) (outputs []float64, err error) {
+	outputs = p.network.Activate(inputs)
+	switch {
+	case outputs == nil:
+		err = errors.New("Network produced nil for outputs")
+	case len(outputs) == 0:
+		err = errors.New("Network produced outputs with zero length")
 	}
-}
-
-func blessConnGene(cg *ConnGene) {
-	k := connKey{cg.Source, cg.Target}
-	m, ok := connInnos[k]
-	if ok {
-		cg.Marker = m
-	} else {
-		cg.Marker = nextMarker()
-		connInnos[k] = cg.Marker
-	}
-}
-
-type nodeKey struct {
-	X, Y float64 // Position of the node in the network
-}
-
-type connKey struct {
-	Source, Target int // Markers of the source and target nodes
+	return
 }

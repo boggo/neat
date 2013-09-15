@@ -26,42 +26,59 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package neat
 
-var (
-	nodeInnos map[nodeKey]int
-	connInnos map[connKey]int
+import (
+	"math"
+	"math/rand"
+	"time"
 )
 
-func resetInnos() {
-	nodeInnos = make(map[nodeKey]int)
-	connInnos = make(map[connKey]int)
+type rng struct {
+	*rand.Rand
 }
 
-func blessNodeGene(ng *NodeGene) {
-	k := nodeKey{ng.X, ng.Y}
-	m, ok := nodeInnos[k]
-	if ok {
-		ng.Marker = m
+var (
+	random rng
+)
+
+func init() {
+	random = rng{rand.New(rand.NewSource(time.Now().UnixNano()))}
+}
+
+func (r *rng) Between(a, b float64) float64 {
+	return r.Float64()*(b-a) + a
+}
+
+func (r *rng) Next() float64 {
+	return r.Float64()
+}
+
+func (r *rng) Int(n int) int {
+	return r.Intn(n)
+}
+
+// Returns a normally distributed deviate with zero mean and unit variance.
+// From Numerical Recipes in C.
+// TODO: involve the mu and sigma parameters. current use mu=0 and sigma=1
+var (
+	iset bool
+	gset float64
+)
+
+func (r *rng) Gaussian() float64 {
+	var fac, rsq, v1, v2 float64
+	if iset == false {
+		rsq = 0
+		for rsq >= 1.0 || rsq == 0.0 {
+			v1 = 2.0*r.Next() - 1.0
+			v2 = 2.0*r.Next() - 1.0
+			rsq = v1*v1 + v2*v2
+		}
+		fac = math.Sqrt(-2.0 * math.Log(rsq) / rsq)
+		gset = v1 * fac
+		iset = true
+		return v2 * fac
 	} else {
-		ng.Marker = nextMarker()
-		nodeInnos[k] = ng.Marker
+		iset = false
+		return gset
 	}
-}
-
-func blessConnGene(cg *ConnGene) {
-	k := connKey{cg.Source, cg.Target}
-	m, ok := connInnos[k]
-	if ok {
-		cg.Marker = m
-	} else {
-		cg.Marker = nextMarker()
-		connInnos[k] = cg.Marker
-	}
-}
-
-type nodeKey struct {
-	X, Y float64 // Position of the node in the network
-}
-
-type connKey struct {
-	Source, Target int // Markers of the source and target nodes
 }
