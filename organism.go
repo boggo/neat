@@ -37,7 +37,7 @@ type Phenome interface {
 
 type Organism struct {
 	*Genome
-	Phenome
+	Phenome `json:"-"`
 }
 
 func cloneOrg(source *Organism, id int) (clone *Organism) {
@@ -46,13 +46,13 @@ func cloneOrg(source *Organism, id int) (clone *Organism) {
 	return
 }
 
-func mutate(org *Organism) {
+func mutate(settings *Settings, inno *innovation, org *Organism) {
 
 	switch {
 	case random.Next() < settings.MutateAddNode:
-		mutateAddNode(org)
+		mutateAddNode(inno, org)
 	case random.Next() < settings.MutateAddConnection:
-		mutateAddConn(org)
+		mutateAddConn(settings, inno, org)
 	default:
 		for _, cg := range org.Conns {
 			if random.Next() < settings.MutateWeight {
@@ -69,7 +69,7 @@ func mutate(org *Organism) {
 	}
 }
 
-func mutateAddNode(org *Organism) {
+func mutateAddNode(inno *innovation, org *Organism) {
 
 	// Pick a connection to split
 	var old *ConnGene
@@ -89,22 +89,22 @@ func mutateAddNode(org *Organism) {
 
 	// Create a new node
 	ng := &NodeGene{Type: neural.HIDDEN, X: (src.X + tgt.X) / 2.0, Y: (src.Y + tgt.Y) / 2.0}
-	blessNodeGene(ng)
+	ng.Marker = inno.blessNodeGene(nodeKey{ng.X, ng.Y})
 	org.Nodes[ng.Marker] = ng
 
 	// Create the new connections
 	cg1 := &ConnGene{Source: src.Marker, Target: ng.Marker, Enabled: true, Weight: 1.0}
-	blessConnGene(cg1)
+	cg1.Marker = inno.blessConnGene(connKey{cg1.Source, cg1.Target})
 	org.Conns[cg1.Marker] = cg1
 	cg2 := &ConnGene{Source: ng.Marker, Target: tgt.Marker, Enabled: true, Weight: old.Weight}
-	blessConnGene(cg2)
+	cg2.Marker = inno.blessConnGene(connKey{cg2.Source, cg2.Target})
 	org.Conns[cg2.Marker] = cg2
 
 	// Disable the old connection
 	old.Enabled = false
 }
 
-func mutateAddConn(org *Organism) {
+func mutateAddConn(settings *Settings, inno *innovation, org *Organism) {
 
 	// Pick 2 nodes to connect
 	var ng1, ng2 *NodeGene
@@ -150,7 +150,7 @@ func mutateAddConn(org *Organism) {
 
 	// Make the new connection
 	cg := &ConnGene{Source: ng1.Marker, Target: ng2.Marker, Enabled: true, Weight: random.Gaussian()}
-	blessConnGene(cg)
+	cg.Marker = inno.blessConnGene(connKey{cg.Source, cg.Target})
 	org.Conns[cg.Marker] = cg
 }
 
@@ -172,15 +172,15 @@ func mutateEnabled(cg *ConnGene) {
 	cg.Enabled = true
 }
 
-func crossover(p1, p2 *Organism) (child *Organism) {
+func crossover(inno *innovation, p1, p2 *Organism) (child *Organism) {
 
 	// Order parents by fitness
-	if p2.Fitness > p1.Fitness {
+	if p2.Fitness[0] > p1.Fitness[0] {
 		p1, p2 = p2, p1
 	}
 
 	// Create the new child
-	genome := &Genome{ID: nextID(), Nodes: make(map[int]*NodeGene), Conns: make(map[int]*ConnGene)}
+	genome := &Genome{ID: inno.nextID(), Nodes: make(map[int]*NodeGene), Conns: make(map[int]*ConnGene)}
 	child = &Organism{Genome: genome}
 
 	// Crossover the connection genes
@@ -241,7 +241,20 @@ func crossover(p1, p2 *Organism) (child *Organism) {
 	return
 }
 
-func distance(o1, o2 *Organism) float64 {
+// Returns the compatibiliy distance between the two organisms
+func distance(settings *Settings, o1, o2 *Organism) float64 {
+
+	// Note from http://www.cs.ucf.edu/~kstanley/neat.html
+	// (How should I test my own version of NEAT to make sure it works)
+	//
+	// If you decide to use the species compatibility coefficients and thresholds
+	// from my own .ne settings files (provided with my NEAT release), then do not
+	// normalize the terms in the compatibility function, because I did not do this
+	// with my .ne files. In other words, even though my papers suggest normalizing
+	// (dividing my number of genes), since I didn't do that the coefficients that
+	// I used will not work the same for you if you normalize. If you strongly desire
+	// to normalize, you will need to find your own appropriate coefficients and
+	// threshold.
 
 	// To use the default settings from Stanley's paper we only consider conn genes.
 	// Look first at the organism with the most conn genes
@@ -284,12 +297,132 @@ type OrganismSlice []*Organism
 
 func (os OrganismSlice) Len() int           { return len(os) }
 func (os OrganismSlice) Swap(i, j int)      { os[i], os[j] = os[j], os[i] }
-func (os OrganismSlice) Less(i, j int) bool { return os[i].Fitness < os[j].Fitness }
+func (os OrganismSlice) Less(i, j int) bool { return os[i].Fitness[0] < os[j].Fitness[0] }
 
 func (os OrganismSlice) TotalFitness() float64 {
 	sum := float64(0)
 	for _, o := range os {
-		sum += o.Fitness
+		sum += o.Fitness[0]
 	}
 	return sum
+}
+
+// Removes a node gene
+// From http://sharpneat.sourceforge.net/phasedsearch.html
+// Neuron deletion is slightly more complex. The deletion algorithm attempts to replace neurons with connections to maintain any circuits a neuron may have participated in, in further generations those connections themselves will be open to deletion. This approach provides NEAT with the ability to delete whole structures, not just connections.
+//
+//Because we replace connected neurons with connections we must be careful which neurons we delete. Any neuron with only incoming or only outgoing connections is at a dead-end of a circuit and can therefore be safely deleted with all of it's connections. However, a neuron with multiple incoming and multiple outgoing connections will require a large number of connections to substitute for the loss of the neuron - we must fully connect all of the original neuron's source neurons with its target neurons, this could be done but may actually be detrimental since the functionality represented by the neuron is now distributed over a number of connections, and this cannot easily be reversed. Because of this, such neurons are omitted from the process of selecting neurons for deletion.
+//
+// Neurons with only one incoming or one outgoing connection can be replaced with however many connections were on the other side of the neuron, therefore these are candidates for deletion.
+
+func mutateDelNode(settings *Settings, org *Organism) {
+
+	// Pick a node to delete
+	var n *NodeGene
+	i := random.Int(len(org.Nodes))
+	for _, v := range org.Nodes {
+		n = v
+		if i == 0 {
+			break
+		}
+		i -= 1
+	}
+	if n.Type != neural.HIDDEN {
+		return
+	} // Only remove hidden nodes
+
+	// Node the incoming and outgoing connections
+	incoming := make([]*ConnGene, 0, 10)
+	outgoing := make([]*ConnGene, 0, 10)
+	for _, c := range org.Conns {
+		if c.Source == n.Marker {
+			outgoing = append(outgoing, c)
+		}
+		if c.Target == n.Marker {
+			incoming = append(incoming, c)
+		}
+	}
+
+	// The node is cut off (no incoming or no outgoing connections)
+	if len(incoming) == 0 {
+		for _, c := range outgoing {
+			delete(org.Conns, c.Marker)
+		}
+		delete(org.Nodes, n.Marker)
+	} else if len(outgoing) == 0 {
+		for _, c := range incoming {
+			delete(org.Conns, c.Marker)
+		}
+		delete(org.Nodes, n.Marker)
+	}
+
+	// There is only one incoming node
+	if len(incoming) == 1 {
+
+		// Replace the node in the outgoing connections
+		a := incoming[0]
+		for _, c := range outgoing {
+			c.Source = a.Source
+		}
+
+		// Delete the incoming connection and node
+		delete(org.Conns, a.Marker)
+		delete(org.Nodes, n.Marker)
+
+	} else if len(outgoing) == 1 {
+
+		// Replace the node in the incoming connections
+		a := outgoing[0]
+		for _, c := range incoming {
+			c.Target = a.Target
+		}
+
+		// Delete the incoming connection and node
+		delete(org.Conns, a.Marker)
+		delete(org.Nodes, n.Marker)
+	}
+}
+
+// Removes a connection gene
+// From http://sharpneat.sourceforge.net/phasedsearch.html
+// Connection deletion is very simply the deletion of a randomly selected connection, all connections are considered to be available for deletion. When a connection is deleted the neurons that were at each end of the connection are tested to check if they are no longer connected to by other connections, if this is the case then the stranded neuron is also deleted. Note that a more thorough cleanup routine could be invoked at this point that cleans up any dead-end structures that could not possibly be functional, but this can become complex and so we leave NEAT to eliminate such structures naturally.
+//
+func mutateDelConnection(settings *Settings, org *Organism) {
+
+	// Pick a connection to remove
+	if len(org.Conns) == 0 {
+		return
+	}
+	var c *ConnGene
+	i := random.Int(len(org.Conns))
+	for _, v := range org.Conns {
+		c = v
+		if i == 0 {
+			break
+		}
+		i -= 1
+	}
+
+	// Node the nodes connected
+	src := org.Nodes[c.Source]
+	tgt := org.Nodes[c.Target]
+	sok := src.Type == neural.HIDDEN // source ok to delete as well
+	tok := tgt.Type == neural.HIDDEN // target ok to delete as well
+	for k, v := range org.Conns {
+		if k != c.Marker {
+			sok = sok && !(v.Source == src.Marker || v.Target == src.Marker)
+			tok = tok && !(v.Source == tgt.Marker || v.Target == tgt.Marker)
+		}
+	}
+
+	// Remove the nodes
+	if sok {
+		delete(org.Nodes, src.Marker)
+	}
+	if tok {
+		delete(org.Nodes, tgt.Marker)
+	}
+
+	// Remove the connection
+	delete(org.Conns, c.Marker)
 }

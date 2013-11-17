@@ -27,10 +27,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package phenome
 
 import (
+	"encoding/gob"
 	"errors"
 	"github.com/boggo/neat"
 	"github.com/boggo/neural"
 )
+
+func init() {
+	gob.Register(networkPhenome{})
+}
 
 // Default implementation of Phenome uses a neural.Network to analyze the
 // inputs

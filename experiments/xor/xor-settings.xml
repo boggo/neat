@@ -1,0 +1,22 @@
+<Settings>
+	<PopulationSize>150</PopulationSize>
+	<BiasCount>1</BiasCount>
+	<InputCount>2</InputCount>
+	<OutputCount>1</OutputCount>
+	<ExcessCoefficient>1.0</ExcessCoefficient>
+	<DisjointCoefficient>1.0</DisjointCoefficient>
+	<WeightCoefficient>0.4</WeightCoefficient>
+	<MutateWeight>0.8</MutateWeight>
+	<MutateWeightNew>0.1</MutateWeightNew>
+	<MutateEnabled>0.75</MutateEnabled>
+	<MutateAddConnection>0.05</MutateAddConnection>
+	<MutateAddNode>0.03</MutateAddNode>
+	<MutateFuncType>0.0</MutateFuncType>
+	<Crossover>0.75</Crossover>
+	<InterspeciesMating>0.001</InterspeciesMating>
+	<AgeToStagnation>15</AgeToStagnation>
+	<SurvivalPercent>0.2</SurvivalPercent>
+	<EliteCount>1</EliteCount>
+	<CompatThreshold>3.0</CompatThreshold>
+	<ArchiveFrequency>0</ArchiveFrequency>
+</Settings>

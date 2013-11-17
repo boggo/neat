@@ -40,21 +40,22 @@ func (pop Population) String() string {
 	return fmt.Sprintf("Population: Generation is %d with %d Species", pop.Generation, len(pop.Species))
 }
 
-func initialPopulation() (pop *Population, err error) {
+// Creates the initial population from the settings by cloning the initial genome
+func initialPopulation(settings *Settings, inno *innovation) (pop *Population, err error) {
 
 	// The initial population has only one species
-	pop = &Population{Generation: 0, Species: make([]*Species, 1, 10)}
-	pop.Species[0] = &Species{ID: nextID()}
+	pop = &Population{Generation: 1, Species: make([]*Species, 1, 10)}
+	pop.Species[0] = &Species{ID: inno.nextID()}
 	pop.Species[0].Orgs = make([]*Organism, settings.PopulationSize)
 
 	// Fill the species with copies of the initial genome
-	ig, e2 := initialGenome()
+	ig, e2 := initialGenome(settings, inno)
 	if e2 != nil {
 		err = e2
 		return
 	}
 	for i := 0; i < settings.PopulationSize; i++ {
-		g := cloneGenome(ig, nextID())
+		g := cloneGenome(ig, inno.nextID())
 		for _, cg := range g.Conns {
 			cg.Weight = random.Gaussian()
 		}
@@ -64,11 +65,12 @@ func initialPopulation() (pop *Population, err error) {
 	return
 }
 
-func rollPop() (err error) {
+// Rolls a population to the next generation
+func rollPop(settings *Settings, inno *innovation, population *Population) (nextPop *Population, err error) {
 
 	// Construct the next population
 	currPop := population
-	nextPop := &Population{Generation: currPop.Generation + 1,
+	nextPop = &Population{Generation: currPop.Generation + 1,
 		Species: make([]*Species, 0, len(currPop.Species))}
 
 	// Update the species fitness in the current population
@@ -78,14 +80,13 @@ func rollPop() (err error) {
 	for _, s := range currPop.Species {
 		s.calcFitness()
 		for _, o := range s.Orgs {
-			if o.Fitness > bestFit {
+			if o.Fitness[0] > bestFit {
 				//bestOrg = o
-				bestFit = o.Fitness
+				bestFit = o.Fitness[0]
 				bestSpecies = s
 			}
 		}
 	}
-	fmt.Printf("Generation %d has %d species with Best Fitness %f\n", currPop.Generation, len(currPop.Species), bestFit)
 
 	// Allow viable species to continue to live but cull their numbers
 	adjFit := float64(0)
@@ -110,10 +111,10 @@ func rollPop() (err error) {
 		}
 	}
 	//sort.Sort(sort.Reverse(living)) // Reverse sort by best fitness
-	popOrgs := living.Organisms()
+	popOrgs := living.Organisms(settings)
 
 	// Create the next generation
-	resetInnos()                                              // Reset the innovation trackers
+	inno.reset()
 	children := make([]*Organism, 0, settings.PopulationSize) // TODO: Make this a channel for concurrency support
 	for _, currS := range living {
 
@@ -133,13 +134,21 @@ func rollPop() (err error) {
 		orgFit := currS.Orgs.TotalFitness()
 		for i := 0; i < cnt; i++ {
 
+			// Allow for innerspecies mating. This is done simply by skipping
+			// over this request for an offspring and letting the section
+			// below, "Ensure we have the right number of children", create
+			// the (potentionally) interspecies child
+			if random.Float64() < settings.InterspeciesMating {
+				continue
+			}
+
 			// Select parent 1
 			p1 := tournament(currS.Orgs, orgFit)
 
 			// Mutate only
 			if len(currS.Orgs) == 1 || random.Next() > settings.Crossover {
-				child := cloneOrg(p1, nextID())
-				mutate(child)
+				child := cloneOrg(p1, inno.nextID())
+				mutate(settings, inno, child)
 				children = append(children, child)
 			} else {
 
@@ -152,8 +161,8 @@ func rollPop() (err error) {
 				}
 
 				// Crossover and mutate
-				child := crossover(p1, p2)
-				mutate(child)
+				child := crossover(inno, p1, p2)
+				mutate(settings, inno, child)
 				children = append(children, child)
 			}
 		}
@@ -166,8 +175,8 @@ func rollPop() (err error) {
 			for c := 0; c < cnt; c++ {
 				p1 := tournament(popOrgs, popFit)
 				p2 := tournament(popOrgs, popFit)
-				child := crossover(p1, p2)
-				mutate(child)
+				child := crossover(inno, p1, p2)
+				mutate(settings, inno, child)
 				children = append(children, child)
 			}
 		}
@@ -175,7 +184,7 @@ func rollPop() (err error) {
 	}
 
 	// Speciate the children
-	speciate(nextPop, children)
+	speciate(settings, inno, nextPop, children)
 
 	// Prune off species which are empty
 	living = make([]*Species, 0, len(living))
@@ -187,15 +196,15 @@ func rollPop() (err error) {
 	nextPop.Species = living
 
 	// Replace the current population with the next one
-	population = nextPop
 	return
+
 }
 
 func tournament(orgs []*Organism, totFit float64) (champ *Organism) {
 	tgt := random.Next() * totFit
 	sum := float64(0)
 	for _, o := range orgs {
-		sum += o.Fitness
+		sum += o.Fitness[0]
 		if sum >= tgt {
 			champ = o
 			return
@@ -204,7 +213,7 @@ func tournament(orgs []*Organism, totFit float64) (champ *Organism) {
 	return // Should be an error to get here
 }
 
-func speciate(pop *Population, children OrganismSlice) {
+func speciate(settings *Settings, inno *innovation, pop *Population, children OrganismSlice) {
 
 	// Iterate the children
 	for _, child := range children {
@@ -212,7 +221,7 @@ func speciate(pop *Population, children OrganismSlice) {
 		// Iterate the species
 		found := false
 		for _, s := range pop.Species {
-			d := distance(child, s.Example)
+			d := distance(settings, child, s.Example)
 			if d < settings.CompatThreshold {
 				s.Orgs = append(s.Orgs, child)
 				found = true
@@ -222,11 +231,43 @@ func speciate(pop *Population, children OrganismSlice) {
 
 		// No species found, add a new one
 		if !found {
-			newS := &Species{ID: nextID(), Orgs: make([]*Organism, 0, 10)}
+			newS := &Species{ID: inno.nextID(), Orgs: make([]*Organism, 0, 10)}
 			pop.Species = append(pop.Species, newS)
 
 			newS.Orgs = append(newS.Orgs, child)
 			newS.Example = child
 		}
 	}
+}
+
+func (pop *Population) Organisms() OrganismSlice {
+	n := 0
+	for _, s := range pop.Species {
+		n += len(s.Orgs)
+	}
+
+	orgs := make([]*Organism, 0, n)
+	for _, s := range pop.Species {
+		for _, o := range s.Orgs {
+			orgs = append(orgs, o)
+		}
+	}
+
+	return orgs
+}
+
+// Returns the mean population complextiy
+// Defined at http://sharpneat.sourceforge.net/phasedsearch.html
+func (pop *Population) MPC() float64 {
+
+	tot := 0
+	cnt := 0
+	for _, s := range pop.Species {
+		for _, o := range s.Orgs {
+			tot += len(o.Nodes) + len(o.Conns)
+		}
+		cnt += 1
+	}
+
+	return float64(tot) / float64(cnt)
 }

@@ -24,51 +24,8 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package main
+package neat
 
-import (
-	"errors"
-	//"fmt"
-	"github.com/boggo/neat"
-	"github.com/boggo/neat/decoder"
-	"github.com/boggo/neat/popeval"
-	"math"
-)
-
-type xorEval struct{}
-
-func (eval xorEval) Evaluate(org *neat.Organism) (err error) {
-
-	if org.Phenome == nil {
-		err = errors.New("Cannot evaluate an org without a Phenome")
-		org.Fitness = 0 // Minimal fitness
-		return
-	}
-
-	in := [][]float64{{0, 0}, {0, 1}, {1, 0}, {1, 1}}
-	out := []float64{0, 1, 1, 0}
-
-	sum := float64(0)
-	for i := 0; i < len(in); i++ {
-		o, e2 := org.Analyze(in[i])
-		if e2 != nil {
-			err = e2
-			org.Fitness = 0
-			return
-		}
-		//fmt.Printf("Genome [%4d]: in %1.0f %1.0f out %1.0f guess was %7.6f err was %7.6f\n", org.ID, in[i][0], in[i][1], out[i], o[0], math.Pow(out[i]-o[0], 2))
-		sum += math.Pow(out[i]-o[0], 2)
-	}
-	org.Fitness = float64(1) - math.Sqrt(sum/float64(4))
-
-	return
-}
-
-func main() {
-
-	neat.SetDecoder(decoder.NewNEAT())
-	neat.SetPopEval(popeval.NewSerial())
-	neat.SetOrgEval(xorEval{})
-	neat.Iterate(100)
-
+type Reporter interface {
+	Report(pop *Population) error
 }

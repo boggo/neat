@@ -24,49 +24,48 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package archiver
 
 import (
-	"fmt"
+	"encoding/json"
+	"github.com/boggo/neat"
+	"os"
 )
 
-type Species struct {
-	ID          int           // Identifier for this species
-	Orgs        OrganismSlice // Portion of the population belonging to this species
-	Age         int           // Age of species
-	BestFitness float64       // Best fitness this species has acheived
-	BestFitAge  int           // Age when species achieved best fitness
-	Example     *Organism     // Example organism for determining future members of this species
-	currFitness float64       // The current generation's fitness
+type jsonArchiver struct {
+	path string
 }
 
-func (s Species) String() string {
-	return fmt.Sprintf("Species [%5d] is %d old and has %d Organisms. Best fitness %6.4f was at %d",
-		s.ID, s.Age, len(s.Orgs), s.BestFitness, s.BestFitAge)
+func NewJSON(path string) neat.Archiver {
+	return &jsonArchiver{path}
 }
 
-func (s *Species) calcFitness() {
-	sum := float64(0)
-	for _, o := range s.Orgs {
-		sum += o.Fitness[0]
+// Load the population from a JSON file
+func (x *jsonArchiver) Restore() (pop *neat.Population, err error) {
+	var f *os.File
+	f, err = os.Open(x.path)
+	if err != nil {
+		return
 	}
-	sum /= float64(len(s.Orgs))
-	s.currFitness = sum
+	defer f.Close()
 
-	if sum > s.BestFitness {
-		s.BestFitness = sum
-		s.BestFitAge = s.Age
-	}
+	pop = new(neat.Population)
+	d := json.NewDecoder(f)
+	err = d.Decode(pop)
+	return
 }
 
-type SpeciesSlice []*Species
+// Save the population to a JSON file
+func (x *jsonArchiver) Archive(pop *neat.Population) (err error) {
 
-func (ss SpeciesSlice) Organisms(settings *Settings) (orgs OrganismSlice) {
-	orgs = make([]*Organism, 0, settings.PopulationSize)
-	for _, s := range ss {
-		for _, o := range s.Orgs {
-			orgs = append(orgs, o)
-		}
+	var f *os.File
+	f, err = os.Create(x.path)
+	if err != nil {
+		return
 	}
+	defer f.Close()
+
+	e := json.NewEncoder(f)
+	err = e.Encode(pop)
 	return
 }

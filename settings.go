@@ -26,38 +26,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package neat
 
-var (
-	settings Settings
-)
-
-// Default values based on Stanley's paper for the XOR experiment
-func init() {
-
-	// A simple XOR function
-	settings.BiasCount = 1
-	settings.InputCount = 2
-	settings.OutputCount = 1
-
-	// From Evolving Neural Networks through Augmenting Topologies, Section 4.1 Parameter Settings
-	settings.PopulationSize = 150
-	settings.ExcessCoefficient = 1.0
-	settings.DisjointCoefficient = 1.0
-	settings.WeightCoefficient = 0.4
-	settings.CompatThreshold = 3.0
-	settings.AgeToStagnation = 15
-	settings.MutateWeight = 0.8
-	settings.MutateWeightNew = 0.0 //0.1
-	settings.MutateEnabled = 0.75
-	settings.Crossover = 1.0 //0.75 // expressed as 25% chance of mutation without crossover in paper
-	settings.InterspeciesMating = 0.001
-	settings.MutateAddNode = 0.03
-	settings.MutateAddConnection = 0.05
-
-	// Extra stuff
-	settings.EliteCount = 1
-	settings.MutateFuncType = 0 // Stick to Steepened Sigmoid
-	settings.SurvivalPercent = 0.2
-
+type Loader interface {
+	Load() (*Settings, error)
 }
 
 type Settings struct {
@@ -82,6 +52,9 @@ type Settings struct {
 	MutateAddConnection float64
 	MutateAddNode       float64
 	MutateFuncType      float64
+	MutateDelNode       float64 // Pruning phase
+	MutateDelConnection float64 // Pruning phase
+	PruneThreshold      float64 // Pruning phase threshold
 
 	// Crossover and breeding probabilities
 	Crossover          float64
@@ -91,4 +64,7 @@ type Settings struct {
 	EliteCount         int     // Number within a species to survive into the next generation
 	CompatThreshold    float64 // Compatiblity threshold for adding a genome to a species
 
+	// Runtime settings
+	ArchiveFrequency int // Frequency to archive the population. 0 = archive every iteration
+	ReportFrequency  int // Frequency to report on the population. 0 = report every iteration
 }

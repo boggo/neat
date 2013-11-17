@@ -24,49 +24,75 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package reporter
 
 import (
-	"fmt"
+	"github.com/boggo/neat"
+	"math"
 )
 
-type Species struct {
-	ID          int           // Identifier for this species
-	Orgs        OrganismSlice // Portion of the population belonging to this species
-	Age         int           // Age of species
-	BestFitness float64       // Best fitness this species has acheived
-	BestFitAge  int           // Age when species achieved best fitness
-	Example     *Organism     // Example organism for determining future members of this species
-	currFitness float64       // The current generation's fitness
-}
-
-func (s Species) String() string {
-	return fmt.Sprintf("Species [%5d] is %d old and has %d Organisms. Best fitness %6.4f was at %d",
-		s.ID, s.Age, len(s.Orgs), s.BestFitness, s.BestFitAge)
-}
-
-func (s *Species) calcFitness() {
-	sum := float64(0)
-	for _, o := range s.Orgs {
-		sum += o.Fitness[0]
-	}
-	sum /= float64(len(s.Orgs))
-	s.currFitness = sum
-
-	if sum > s.BestFitness {
-		s.BestFitness = sum
-		s.BestFitAge = s.Age
-	}
-}
-
-type SpeciesSlice []*Species
-
-func (ss SpeciesSlice) Organisms(settings *Settings) (orgs OrganismSlice) {
-	orgs = make([]*Organism, 0, settings.PopulationSize)
-	for _, s := range ss {
-		for _, o := range s.Orgs {
-			orgs = append(orgs, o)
+func max(x []float64) float64 {
+	m := float64(0)
+	for _, a := range x {
+		if a > m {
+			m = a
 		}
 	}
-	return
+	return m
 }
+
+func min(x []float64) float64 {
+	m := math.MaxFloat64
+	for _, a := range x {
+		if a < m {
+			m = a
+		}
+	}
+	return m
+}
+
+func avg(x []float64) float64 {
+	n := float64(len(x))
+	if n == 0 {
+		return 0
+	}
+
+	s := float64(0)
+	for _, a := range x {
+		s += a
+	}
+
+	return s / n
+}
+
+func avgFit(s *neat.Species) float64 {
+	x := make([]float64, len(s.Orgs))
+	for i, o := range s.Orgs {
+		x[i] = o.Fitness[0]
+	}
+	return avg(x)
+}
+
+func avgNod(s *neat.Species) float64 {
+	x := make([]float64, len(s.Orgs))
+	for i, o := range s.Orgs {
+		x[i] = float64(len(o.Nodes))
+	}
+	return avg(x)
+}
+
+func avgCon(s *neat.Species) float64 {
+	x := make([]float64, len(s.Orgs))
+	for i, o := range s.Orgs {
+		x[i] = float64(len(o.Conns))
+	}
+	return avg(x)
+}
+
+type speciesSort struct {
+	species []*neat.Species
+}
+
+func (ss *speciesSort) Len() int           { return len(ss.species) }
+func (ss *speciesSort) Swap(i, j int)      { ss.species[i], ss.species[j] = ss.species[j], ss.species[i] }
+func (ss *speciesSort) Less(i, j int) bool { return ss.species[i].ID < ss.species[j].ID }

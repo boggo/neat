@@ -28,28 +28,8 @@ package neat
 
 import (
 	"fmt"
-	"math"
-	"sort"
+	"sync"
 )
-
-var (
-	population *Population // The current population
-	decoder    Decoder     // Decodes a genome into a phenome
-	orgEval    OrgEval     // Evaluates a single organism
-	popEval    PopEval     // Evaluates the whole population
-)
-
-func SetDecoder(d Decoder) {
-	decoder = d
-}
-
-func SetOrgEval(o OrgEval) {
-	orgEval = o
-}
-
-func SetPopEval(p PopEval) {
-	popEval = p
-}
 
 type Decoder interface {
 	Decode(genome *Genome) (phenome Phenome, err error)
@@ -63,32 +43,92 @@ type PopEval interface {
 	Evaluate(pop *Population, orgEval OrgEval) (err error)
 }
 
-func Iterate(iters int) {
+func Iterate(settings *Settings, n int, dcode Decoder, popEval PopEval, orgEval OrgEval, arch Archiver, rep Reporter) {
 
 	var err error
 
-	for i := 0; i < iters; i++ {
+	// Phase search parameters
+	var pth float64 // Pruning threshold
+	var cmplx bool  // Switch between complexifying (true) and simplifying (false)
+	var addNode, delNode, addConn, delConn, cross float64 // original values
+	addNode = settings.MutateAddNode
+	delNode = settings.MutateDelNode
+	addConn = settings.MutateAddConnection
+	delConn = settings.MutateDelConnection
+	cross = settings.Crossover
+	cmplx = true	// Start with complexifying
+
+	// Restore the population
+	var population *Population
+	if arch != nil {
+		population, err = arch.Restore()
+		if err != nil {
+			fmt.Println("Restore failed:", err) // Will begin a new population
+		} else {
+			pth = population.MPC() + settings.PruneThreshold
+		}
+	}
+
+	// Create the innovation tracker
+	inno := newInnovation(population)
+	defer inno.close()
+
+	//Iterate
+	for i := 0; i < n; i++ {
 
 		// Ensure the current population
 		if population == nil {
-			population, err = initialPopulation()
+			population, err = initialPopulation(settings, inno)
+			pth = population.MPC() + settings.PruneThreshold
 		} else {
-			err = rollPop()
+
+			// Determine if the search should switch to decomplexifying
+			if cmplx {}
+			mpc := population.MPC()
+			cmplx = (settings.PruneThreshold > 0) && (mpc < pth)
+			} else {
+				m = population.MPC()
+				if nochg > settings.PruneFloor {
+					cmplx = true
+				}
+				
+			}
+			if cmplx {
+				settings.MutateAddNode = addNode
+				settings.MutateAddConnection = addConn
+				settings.MutateDelNode = 0
+				settings.MutateDelConnection = 0
+				settings.Crossover = cross
+			} else {
+				settings.MutateAddNode = 0
+				settings.MutateAddConnection = 0
+				settings.MutateDelNode = delNode
+				settings.MutateDelConnection = delConn
+				settings.Crossover = 0
+			}
+			// Roll to the next generation
+			population, err = rollPop(settings, inno, population)
 		}
 		if err != nil {
 			panic(err)
 		}
 
 		// Ensure every organism is decoded
-		orgs := population.Species.Organisms()
+		var w sync.WaitGroup
+		orgs := population.Species.Organisms(settings)
 		for _, o := range orgs {
 			if o.Phenome == nil {
-				o.Phenome, err = decoder.Decode(o.Genome)
-				if err != nil {
-					// Do what exactly?
-				}
+				w.Add(1)
+				go func(o *Organism) {
+					o.Phenome, err = dcode.Decode(o.Genome)
+					if err != nil {
+						// Do what exactly?
+					}
+					w.Done()
+				}(o)
 			}
 		}
+		w.Wait()
 
 		// Evaluate each organism
 		err = popEval.Evaluate(population, orgEval)
@@ -96,65 +136,23 @@ func Iterate(iters int) {
 			panic(err)
 		}
 
-		//DumpPopulation()
-		Best()
-	}
-
-	//DumpPopulation()
-	Best()
-}
-
-// Debug
-func DumpPopulation() {
-	fmt.Println("Current Population:")
-	fmt.Println(population)
-	for _, s := range population.Species {
-		fmt.Printf("\t%v\n", s)
-		for _, o := range s.Orgs {
-			DumpOrg(o)
+		// Archive the population
+		if arch != nil && (i == n-1 ||
+			(settings.ArchiveFrequency == 0 || i%settings.ArchiveFrequency == 0)) {
+			err = arch.Archive(population)
+			if err != nil {
+				panic(err)
+			}
 		}
-	}
-}
 
-func DumpOrg(o *Organism) {
-	fmt.Printf("\t\t%v\n", o.Genome)
-	for _, ng := range o.Nodes {
-		fmt.Printf("\t\t\t%v\n", ng)
-	}
-	for _, cg := range o.Conns {
-		fmt.Printf("\t\t\t%v\n", cg)
-	}
-}
-func Best() {
+		// Report the population
+		if rep != nil && (i == n-1 || (settings.ReportFrequency == 0 || i%settings.ReportFrequency == 0)) {
+			err = rep.Report(population)
+			if err != nil {
+				panic(err)
+			}
+		}
 
-	fmt.Println("Current Population:")
-	fmt.Println(population)
-	for _, s := range population.Species {
-		fmt.Printf("\t%v\n", s)
 	}
-	orgs := population.Species.Organisms()
-	sort.Sort(sort.Reverse(orgs))
-	org := orgs[0]
-	fmt.Println("Best org", org)
-	for _, ng := range org.Nodes {
-		fmt.Printf("\t\t\t%v\n", ng)
-	}
-	for _, cg := range org.Conns {
-		fmt.Printf("\t\t\t%v\n", cg)
-	}
-	in := [][]float64{{0, 0}, {0, 1}, {1, 0}, {1, 1}}
-	out := []float64{0, 1, 1, 0}
 
-	sum := float64(0)
-
-	for i := 0; i < len(in); i++ {
-		o, _ := org.Analyze(in[i])
-		e := math.Pow(out[i]-o[0], 2)
-		sum += e
-		fmt.Printf("%f XOR %f = %f, output was %8.6f error was %8.6f\n", in[i][0], in[i][1], out[i], o[0], e)
-	}
-	fmt.Println("Org fitness is therefore ", float64(1)-math.Sqrt(sum/float64(4)))
-	if org.Fitness > 0.9 {
-		panic("No error just done!")
-	}
 }

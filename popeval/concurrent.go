@@ -24,49 +24,32 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package neat
+package popeval
 
 import (
-	"fmt"
+	"github.com/boggo/neat"
+	"sync"
 )
 
-type Species struct {
-	ID          int           // Identifier for this species
-	Orgs        OrganismSlice // Portion of the population belonging to this species
-	Age         int           // Age of species
-	BestFitness float64       // Best fitness this species has acheived
-	BestFitAge  int           // Age when species achieved best fitness
-	Example     *Organism     // Example organism for determining future members of this species
-	currFitness float64       // The current generation's fitness
+func NewConcurrent() *concurrentPopEval {
+	return &concurrentPopEval{}
 }
 
-func (s Species) String() string {
-	return fmt.Sprintf("Species [%5d] is %d old and has %d Organisms. Best fitness %6.4f was at %d",
-		s.ID, s.Age, len(s.Orgs), s.BestFitness, s.BestFitAge)
-}
+type concurrentPopEval struct{}
 
-func (s *Species) calcFitness() {
-	sum := float64(0)
-	for _, o := range s.Orgs {
-		sum += o.Fitness[0]
+func (p concurrentPopEval) Evaluate(pop *neat.Population, orgEval neat.OrgEval) (err error) {
+
+	orgs := pop.Organisms()
+
+	var w sync.WaitGroup
+	w.Add(len(orgs))
+	for _, o := range orgs {
+		go func(o *neat.Organism) {
+			err = orgEval.Evaluate(o)
+			w.Done()
+		}(o)
 	}
-	sum /= float64(len(s.Orgs))
-	s.currFitness = sum
+	w.Wait()
 
-	if sum > s.BestFitness {
-		s.BestFitness = sum
-		s.BestFitAge = s.Age
-	}
-}
-
-type SpeciesSlice []*Species
-
-func (ss SpeciesSlice) Organisms(settings *Settings) (orgs OrganismSlice) {
-	orgs = make([]*Organism, 0, settings.PopulationSize)
-	for _, s := range ss {
-		for _, o := range s.Orgs {
-			orgs = append(orgs, o)
-		}
-	}
 	return
 }

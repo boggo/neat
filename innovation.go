@@ -26,42 +26,165 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package neat
 
-var (
-	nodeInnos map[nodeKey]int
-	connInnos map[connKey]int
-)
-
-func resetInnos() {
-	nodeInnos = make(map[nodeKey]int)
-	connInnos = make(map[connKey]int)
-}
-
-func blessNodeGene(ng *NodeGene) {
-	k := nodeKey{ng.X, ng.Y}
-	m, ok := nodeInnos[k]
-	if ok {
-		ng.Marker = m
-	} else {
-		ng.Marker = nextMarker()
-		nodeInnos[k] = ng.Marker
-	}
-}
-
-func blessConnGene(cg *ConnGene) {
-	k := connKey{cg.Source, cg.Target}
-	m, ok := connInnos[k]
-	if ok {
-		cg.Marker = m
-	} else {
-		cg.Marker = nextMarker()
-		connInnos[k] = cg.Marker
-	}
-}
-
 type nodeKey struct {
 	X, Y float64 // Position of the node in the network
 }
 
 type connKey struct {
 	Source, Target int // Markers of the source and target nodes
+}
+
+type nodeRequest struct {
+	key nodeKey
+	ret chan int
+}
+
+type connRequest struct {
+	key connKey
+	ret chan int
+}
+
+// Innovation provides new IDs and Markers to the different components
+// of the NEAT algorithm. The implementation here borrows from the good
+// work of others. Specifically, the "sequences" for IDs and Markers are
+// based on the AutoInc code found at
+//     http://www.mikespook.com/2012/05/golang-funny-play-with-channel/
+//
+// The maps used to "bless" node and connection genes are based on the
+// transactionMap found in David Chsinall's "The Go Programming Language
+// Phrasebook" in chapter 10, Concurrency Design Patterns.
+type innovation struct {
+	running bool // Flag indicating that innovation is still running
+
+	ids     chan int // queue of next available IDs
+	markers chan int // queue of next available markers
+
+	nodes map[nodeKey]int // history of node innovations
+	conns map[connKey]int // history of connection innovations
+
+	reqN chan nodeRequest
+	reqC chan connRequest
+}
+
+func newInnovation(pop *Population) *innovation {
+
+	// Create a new innovation
+	inno := &innovation{
+		running: true,
+		ids:     make(chan int, 8),
+		markers: make(chan int, 8),
+
+		reqN:  make(chan nodeRequest),
+		reqC:  make(chan connRequest),
+		nodes: make(map[nodeKey]int),
+		conns: make(map[connKey]int)}
+
+	// Identify and start the sequences
+	id := 0
+	marker := 0
+	if pop != nil {
+		for _, s := range pop.Species {
+			if s.ID > id {
+				id = s.ID
+			}
+			for _, o := range s.Orgs {
+				if o.ID > id {
+					id = o.ID
+				}
+				for _, g := range o.Nodes {
+					if g.Marker > marker {
+						marker = g.Marker
+					}
+				}
+				for _, g := range o.Conns {
+					if g.Marker > marker {
+						marker = g.Marker
+					}
+				}
+			}
+		}
+	}
+	go inno.startIDs(id + 1)
+	go inno.startMarkers(marker + 1)
+
+	// Create and start the marker requests
+	inno.reqN = make(chan nodeRequest)
+	inno.reqC = make(chan connRequest)
+	go inno.runNodes()
+	go inno.runConns()
+
+	// Return the innovation
+	return inno
+
+}
+
+func (inno *innovation) close() {
+	inno.running = false
+	close(inno.ids)
+	close(inno.markers)
+	close(inno.reqC)
+	close(inno.reqN)
+}
+
+func (inno *innovation) startIDs(start int) {
+	defer func() { recover() }()
+	for i := start; inno.running; i++ {
+		inno.ids <- i
+	}
+}
+
+func (inno *innovation) startMarkers(start int) {
+	defer func() { recover() }()
+	for i := start; inno.running; i++ {
+		inno.markers <- i
+	}
+}
+
+func (inno *innovation) nextID() int {
+	return <-inno.ids
+}
+
+func (inno *innovation) nextMarker() int {
+	return <-inno.markers
+}
+
+func (inno *innovation) reset() {
+	inno.nodes = make(map[nodeKey]int)
+	inno.conns = make(map[connKey]int)
+}
+
+func (inno *innovation) runNodes() {
+	for inno.running {
+		req := <-inno.reqN
+		m, ok := inno.nodes[req.key]
+		if !ok {
+			m = <-inno.markers
+			inno.nodes[req.key] = m
+		}
+		req.ret <- m
+	}
+}
+
+func (inno *innovation) runConns() {
+	for inno.running {
+		req := <-inno.reqC
+		m, ok := inno.conns[req.key]
+		if !ok {
+			m = <-inno.markers
+			inno.conns[req.key] = m
+		}
+		req.ret <- m
+	}
+}
+
+func (inno *innovation) blessNodeGene(key nodeKey) int {
+	result := make(chan int)
+	inno.reqN <- nodeRequest{key, result}
+	return <-result
+}
+
+func (inno *innovation) blessConnGene(key connKey) int {
+	result := make(chan int)
+	inno.reqC <- connRequest{key, result}
+	return <-result
 }
